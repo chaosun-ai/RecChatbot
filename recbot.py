@@ -1,9 +1,13 @@
+import pandas as pd
+import ast
 from dotenv import load_dotenv
-#from langchain.llms import OpenAI
+
 from langchain.chat_models import AzureChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain, SequentialChain
+from langchain.memory import ConversationSummaryMemory
+from langchain.chains import ConversationChain
 from langchain.output_parsers.openai_functions import PydanticAttrOutputFunctionsParser
 from langchain.utils.openai_functions import convert_pydantic_to_openai_function
 from operator import itemgetter
@@ -14,31 +18,19 @@ from typing import Literal
 
 from collections import deque
 
-from utility import TopicClassifier
+from utility import get_embeddings, sort_df_similarity
 import streamlit as st
 
 # Load env vars
 load_dotenv()
 
+df = pd.read_csv('articles_embedding.csv')
+df['embeddings'] = df['embeddings'].apply(ast.literal_eval)
+
 st.title('Woman Cloth Helper Wizard')
 prompt = st.text_input('Tell me what woman cloth would you like me to recommend.') 
 
 
-
-# Define the prompt
-fashion_template = """You're a very knowledgeable woman cloth fashion expert \
-    who provides accurate and eloquent answers to fashion-related questions and recommend cloth for customers. \
-    When you don't know the answer to a question you admit that you don't know.
-    
-    Here is a question:
-    {input}"""
-fashion_prompt = PromptTemplate.from_template(fashion_template)
-
-#classifier_template =     """You're a very knowledgeable woman cloth fashion expert \
-#    who provides accurate and eloquent answers to fashion-related questions and recommend cloth for customers. \
-#    if the question is related to your expertise, then reply 'related'. Otherwise, reply 'not_related'."""
-
-#classify_type = Literal["fashion", "cloth searching", "general"]
 classifier_template_str = "Please classify user question {input} as either 'fashion', 'cloth searching' or 'other' \
     and reply either 'fashion', 'cloth searching' or 'other' according to your classification"
 
@@ -53,46 +45,33 @@ classifier_prompt = PromptTemplate(
 # Prompt templates
 fashion_template = PromptTemplate(
     input_variables = ['input'], 
-    template = """As a very knowledgeable woman cloth fashion expert, \
+    template = """{chat_history}
+    As a very knowledgeable woman cloth fashion expert, \
     please provides accurate and eloquent answers to fashion-related questions {input}."""
 )
 
 recommendation_template = PromptTemplate(
     input_variables = ['input'], 
-    template='''Recommend me a woman cloth based on the user requirement {input}
-    '''
+    template="""{chat_history}
+    Recommend me a woman cloth based on the user requirement {input}"""
 )
 
-llm = AzureChatOpenAI(
-    temperature=0,
-    deployment_name="azure-gpt-35-turbo",
-    model_name="azure-gpt-35-turbo"
-)
+if "llm" not in st.session_state:
+    st.session_state.llm = AzureChatOpenAI(
+        temperature=0,
+        deployment_name="azure-gpt-35-turbo",
+        model_name="azure-gpt-35-turbo"
+    )
 
-# Define classifier chains
-classifier_function = convert_pydantic_to_openai_function(TopicClassifier)
-llm_classifier = llm.bind(
-    functions=[classifier_function], function_call={"name": "TopicClassifier"}
-)
-parser = PydanticAttrOutputFunctionsParser(
-    pydantic_schema=TopicClassifier, attr_name="topic"
-)
-classifier_chain = llm_classifier | parser
+if "memory" not in st.session_state:
+    st.session_state.memory = ConversationSummaryMemory(llm=st.session_state.llm, memory_key="chat_history")
 
 # default chain
-default_chain = "I can only answer questions about fashion."
+default_chain = "I can only answer questions about fashion and cloth recommendation."
 
-classifier_chain = LLMChain(llm=llm, prompt=classifier_prompt, verbose=True, output_key='classification_result')
-fashion_chain = LLMChain(llm=llm, prompt=fashion_template, verbose=True, output_key='fashion_suggestion')
-recommendation_chain = LLMChain(llm=llm, prompt=recommendation_template, verbose=True, output_key='cloth_recommendation')
-
-"""
-sequential_chain = SequentialChain(
-    chains = [fashion_chain, recommendation_chain], 
-    input_variables=['input'], 
-    output_variables=['programming_language', 'book_name'],
-    verbose=True)
-"""
+classifier_chain = LLMChain(llm=st.session_state.llm, prompt=classifier_prompt, verbose=True, output_key='classification_result')
+fashion_chain = LLMChain(llm=st.session_state.llm, prompt=fashion_template, verbose=True, output_key='fashion_suggestion', memory=st.session_state.memory)
+recommendation_chain = LLMChain(llm=st.session_state.llm, prompt=recommendation_template, verbose=True, output_key='cloth_recommendation', memory=st.session_state.memory)
 
 
 
@@ -100,22 +79,35 @@ sequential_chain = SequentialChain(
 
 
 if prompt: 
-    class_reply = classifier_chain({'input': prompt})
+    class_reply = classifier_chain({'input': prompt + st.session_state.memory.buffer})
     if 'fashion' in class_reply['classification_result'].lower():
         reply = fashion_chain({'input': prompt})['fashion_suggestion'] #
+        reply_embedding = get_embeddings(reply)
+        df_sort = sort_df_similarity(df, reply_embedding, 'embeddings')
+        cloth_predict = df_sort[['article_id', 'prod_name', 'detail_desc']].head(2).to_string()
+        final_reply = reply + '\n' \
+            + 'Here I got some clothes for you. If these are not what you need, please let me know more details about your requirement.'\
+            + '\n' + cloth_predict + '\n'
+
     elif 'cloth' in class_reply['classification_result'].lower():
-        reply = recommendation_chain({'input': prompt})['cloth_recommendation'] # to do - add memory.
+        reply = recommendation_chain({'input': prompt})['cloth_recommendation'] # 
+        reply_embedding = get_embeddings(reply)
+        df_sort = sort_df_similarity(df, reply_embedding, 'embeddings')
+        cloth_predict = df_sort[['article_id', 'prod_name', 'detail_desc']].head(2).to_string()
+        final_reply = reply + '\n' \
+            + 'Here I got some clothes for you. If these are not what you need, please let me know more details about your requirement.'\
+            + '\n' + cloth_predict + '\n'
     else:
-        reply = default_chain
+        final_reply = default_chain
 
 
-    st.text_area("Answer", value=reply)
+    st.text_area("Answer", value=final_reply)
 
     with open('chat_history.log', 'a') as f:
-        f.write(prompt + '\n' + reply + '/n')
+        f.write(prompt + '\n' + final_reply + '\n')
         
     with st.expander("Chat History"):
         st.info('Chat history in chat_history.log')
 
     with st.expander("Print for debugging"):
-        st.info(class_reply)
+        st.info(st.session_state.memory)
