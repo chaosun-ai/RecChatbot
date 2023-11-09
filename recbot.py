@@ -74,10 +74,6 @@ fashion_chain = LLMChain(llm=st.session_state.llm, prompt=fashion_template, verb
 recommendation_chain = LLMChain(llm=st.session_state.llm, prompt=recommendation_template, verbose=True, output_key='cloth_recommendation', memory=st.session_state.memory)
 
 
-
-#prompt_reply_queue = deque(maxlen=10)
-
-
 if prompt: 
     class_reply = classifier_chain({'input': prompt + st.session_state.memory.buffer})
     if 'fashion' in class_reply['classification_result'].lower():
@@ -99,7 +95,6 @@ if prompt:
             + '\n' + cloth_predict + '\n'
     else:
         final_reply = default_chain
-
 
     st.text_area("Answer", value=final_reply)
 
