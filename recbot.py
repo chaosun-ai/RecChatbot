@@ -38,35 +38,35 @@ fashion_prompt = PromptTemplate.from_template(fashion_template)
 #    who provides accurate and eloquent answers to fashion-related questions and recommend cloth for customers. \
 #    if the question is related to your expertise, then reply 'related'. Otherwise, reply 'not_related'."""
 
-classify_type = Literal["fashion", "cloth searching", "general"]
-classifier_template_str = "Please classify user question {input} and reply either 'fashion', 'cloth searching' or 'other' "
+#classify_type = Literal["fashion", "cloth searching", "general"]
+classifier_template_str = "Please classify user question {input} as either 'fashion', 'cloth searching' or 'other' \
+    and reply either 'fashion', 'cloth searching' or 'other' according to your classification"
 
 
 classifier_prompt = PromptTemplate(
     template=classifier_template_str,
     input_variables=['input'],
-    
+
 )
 
 
 # Prompt templates
-language_template = PromptTemplate(
-    input_variables = ['topic'], 
-    template='Suggest me a programming language for {topic} and respond in a code block with the language name only'
+fashion_template = PromptTemplate(
+    input_variables = ['input'], 
+    template = """As a very knowledgeable woman cloth fashion expert, \
+    please provides accurate and eloquent answers to fashion-related questions {input}."""
 )
 
-book_recommendation_template = PromptTemplate(
-    input_variables = ['programming_language'], 
-    template='''Recommend me a book based on this programming language {programming_language}
-
-    The book name should be in a code block and the book name should be the only text in the code block
+recommendation_template = PromptTemplate(
+    input_variables = ['input'], 
+    template='''Recommend me a woman cloth based on the user requirement {input}
     '''
 )
 
 llm = AzureChatOpenAI(
     temperature=0,
     deployment_name="azure-gpt-35-turbo",
-    model_name="azure-text-embedding-ada-002"
+    model_name="azure-gpt-35-turbo"
 )
 
 # Define classifier chains
@@ -83,32 +83,39 @@ classifier_chain = llm_classifier | parser
 default_chain = "I can only answer questions about fashion."
 
 classifier_chain = LLMChain(llm=llm, prompt=classifier_prompt, verbose=True, output_key='classification_result')
-language_chain = LLMChain(llm=llm, prompt=language_template, verbose=True, output_key='programming_language')
-book_recommendation_chain = LLMChain(llm=llm, prompt=book_recommendation_template, verbose=True, output_key='book_name')
+fashion_chain = LLMChain(llm=llm, prompt=fashion_template, verbose=True, output_key='fashion_suggestion')
+recommendation_chain = LLMChain(llm=llm, prompt=recommendation_template, verbose=True, output_key='cloth_recommendation')
 
+"""
 sequential_chain = SequentialChain(
-    chains = [language_chain, book_recommendation_chain], 
-    input_variables=['topic'], 
+    chains = [fashion_chain, recommendation_chain], 
+    input_variables=['input'], 
     output_variables=['programming_language', 'book_name'],
     verbose=True)
+"""
 
-prompt_reply_queue = deque(maxlen=10)
+
+
+#prompt_reply_queue = deque(maxlen=10)
 
 
 if prompt: 
-    reply = classifier_chain({'input': prompt})
-    if 
+    class_reply = classifier_chain({'input': prompt})
+    if 'fashion' in class_reply['classification_result'].lower():
+        reply = fashion_chain({'input': prompt})['fashion_suggestion'] #
+    elif 'cloth' in class_reply['classification_result'].lower():
+        reply = recommendation_chain({'input': prompt})['cloth_recommendation'] # to do - add memory.
+    else:
+        reply = default_chain
 
 
+    st.text_area("Answer", value=reply)
 
-    prompt_reply_queue.append(prompt)
-    prompt_reply_queue.append(reply['classification_result'])
-
-    st.text_area("Answer", value=reply['classification_result'])
+    with open('chat_history.log', 'a') as f:
+        f.write(prompt + '\n' + reply + '/n')
         
-    strings = "\n".join(prompt_reply_queue)
     with st.expander("Chat History"):
-        st.write(strings)
+        st.info('Chat history in chat_history.log')
 
-    #with st.expander("Recommended Book"):
-    #    st.info(reply['book_name'])
+    with st.expander("Print for debugging"):
+        st.info(class_reply)
