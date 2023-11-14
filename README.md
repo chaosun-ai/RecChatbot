@@ -8,7 +8,7 @@ This is an prototype of using chatbot to do cloth recommendation.
 2. source venv/bin/activate
 3. pip install -r requirements.txt
 4. Put articles.csv in the project folder. (I didn't put the file on git.)
-5. Create an .env file. In that file, add the following info.
+5. Create an .env file. In that file, add the following info. (I didn't put the file on git.)
     OPENAI_API_KEY=**
     OPENAI_API_TYPE=**
     OPENAI_API_VERSION=**
