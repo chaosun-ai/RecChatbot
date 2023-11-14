@@ -8,9 +8,15 @@ This is an prototype of using chatbot to do cloth recommendation.
 2. source venv/bin/activate
 3. pip install -r requirements.txt
 4. Put articles.csv in the project folder. (I didn't put the file on git.)
-5. Run embedding.ipynb to generate articles_embedding.csv.
-4. In the terminal, run 'streamlit run recbot.py'.
-5. A page will be opened in your browser. If not, open http://localhost:8501/ in your browser.
+5. Create an .env file. In that file, add the following info.
+    OPENAI_API_KEY=**
+    OPENAI_API_TYPE=**
+    OPENAI_API_VERSION=**
+    OPENAI_API_BASE=**
+    EMBEDDING_DEPLOYMENT_NAME =**
+6. Run embedding.ipynb to generate articles_embedding.csv.
+7. In the terminal, run 'streamlit run recbot.py'.
+8. A page will be opened in your browser. If not, open http://localhost:8501/ in your browser.
 
 
 
